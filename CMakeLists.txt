@@ -2,18 +2,16 @@ cmake_minimum_required(VERSION 3.0...3.15)
 
 project(dll-injection-skeleton)
 
-include(GenerateExportHeader)
+set(LOCAL_PROJECT OFF) 
 
-if(WIN32)
-	add_definitions(-D_WIN32_WINNT=0x0502)
+if(${CMAKE_CURRENT_SOURCE_DIR} STREQUAL ${CMAKE_SOURCE_DIR})
+	set(LOCAL_PROJECT ON) 
 endif()
 
-# Common compiler flags
-add_compile_options(
-    $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall>
-    $<$<CXX_COMPILER_ID:MSVC>:/W4>
-    $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Werror>
-    $<$<CXX_COMPILER_ID:MSVC>:/WX>
-)
+option(DIS_BUILD_EXAMPLES "Build examples for Dll Injection Skeleton" ${LOCAL_PROJECT})
 
 add_subdirectory(src)
+
+if(DIS_BUILD_EXAMPLES)
+	add_subdirectory(samples)
+endif()
