@@ -2,33 +2,51 @@
 #include <string>
 #include <windows.h>
 #include <psapi.h>
+#include <vector>
+#include <TlHelp32.h>
 
-// Name of the program to inject the dll in
-static const std::string programName = "gvim.exe";
+HMODULE GetMHandle(DWORD processID, const char* dllName) {
+    HMODULE hMod = 0;
+    HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, processID);
 
-// Name of the dll to inject
-static const std::string dllName = "libinjected.dll";
+    if (hSnapshot != INVALID_HANDLE_VALUE) {
+        MODULEENTRY32 moduleEntry;
+        moduleEntry.dwSize = sizeof(moduleEntry);
 
-DWORD findPid(const std::string& programName)
+        if (Module32First(hSnapshot, &moduleEntry)) {
+            do {
+                if (strstr(moduleEntry.szModule, dllName)) {
+                    hMod = moduleEntry.hModule;
+                    break;
+                }
+            } while (Module32Next(hSnapshot, &moduleEntry));
+        }
+        CloseHandle(hSnapshot);
+    }
+    return hMod;
+}
+
+size_t findPids(const char* programName, size_t resPidsSz, DWORD* outPids)
 {
   // Enumerate all processes
-  DWORD pids[1024];
+  size_t resIndex = 0;
+  DWORD pidsArr[1024];
   DWORD temp;
-  if (!EnumProcesses(pids, sizeof(pids), &temp))
+  if (!EnumProcesses(pidsArr, sizeof(pidsArr), &temp))
   {
-    return 1;
+    return {};
   }
 
   // Find the first process with the given program name
   auto noPids = temp / sizeof(DWORD);
   for (auto i = 0u; i < noPids; i++)
   {
-    if (pids[i] == 0)
+    if (pidsArr[i] == 0)
     {
       continue;
     }
 
-    auto tempHandle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pids[i]);
+    auto tempHandle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pidsArr[i]);
     if (tempHandle == NULL)
     {
       continue;
@@ -39,89 +57,167 @@ DWORD findPid(const std::string& programName)
     {
       TCHAR szProcessName[MAX_PATH];
       GetModuleBaseName(tempHandle, tempModule, szProcessName, sizeof(szProcessName) / sizeof(TCHAR));
-      if (strcmp(programName.c_str(), szProcessName) == 0)
+      if (strcmp(programName, szProcessName) == 0)
       {
-        return pids[i];
+        outPids[resIndex++] = pidsArr[i];
+        if ((resIndex < resPidsSz) == false)
+            break;
       }
     }
   }
 
-  return 0;
+  return resIndex;
 }
 
-bool injectDLL(DWORD pid)
+bool injectDLL(HANDLE hProc, const char* dllFullPath)
 {
-  // Get full path of our dll
-  char fullDllName[1024];
-  if (GetFullPathName(dllName.c_str(), sizeof(fullDllName), fullDllName, nullptr) == 0)
-  {
-    return false;
-  }
+    // Get the address to the function LoadLibraryA in kernel32.dll
+    auto LoadLibAddr = (LPVOID)GetProcAddress(GetModuleHandleA("kernel32.dll"), "LoadLibraryA");
+    if (LoadLibAddr == NULL)
+    {
+        return false;
+    }
 
-  // Open process using pid
-  auto handle = OpenProcess(PROCESS_ALL_ACCESS, false, pid);
-  if (handle == NULL)
-  {
-    return false;
-  }
+    // Allocate memory inside the opened process
+    auto dereercomp = VirtualAllocEx(hProc, NULL, strlen(dllFullPath), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (dereercomp == NULL)
+    {
+        return false;
+    }
 
-  // Get the address to the function LoadLibraryA in kernel32.dll
-  auto LoadLibAddr = (LPVOID)GetProcAddress(GetModuleHandleA("kernel32.dll"), "LoadLibraryA");
-  if (LoadLibAddr == NULL)
-  {
-    return false;
-  }
+    // Write the DLL name to the allocated memory
+    if (!WriteProcessMemory(hProc, dereercomp, dllFullPath, strlen(dllFullPath), NULL))
+    {
+        return false;
+    }
 
-  // Allocate memory inside the opened process
-  auto dereercomp = VirtualAllocEx(handle, NULL, strlen(fullDllName), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-  if (dereercomp == NULL)
-  {
-    return false;
-  }
+    // Create a thread in the opened process
+    auto remoteThread = CreateRemoteThread(hProc, NULL, 0, (LPTHREAD_START_ROUTINE)LoadLibAddr, dereercomp, 0, NULL);
+    if (remoteThread == NULL)
+    {
+        return false;
+    }
 
-  // Write the DLL name to the allocated memory
-  if (!WriteProcessMemory(handle, dereercomp, fullDllName, strlen(fullDllName), NULL))
-  {
-    return false;
-  }
+    // Wait until thread have started (or stopped?)
+    WaitForSingleObject(remoteThread, INFINITE);
 
-  // Create a thread in the opened process
-  auto remoteThread = CreateRemoteThread(handle, NULL, 0, (LPTHREAD_START_ROUTINE)LoadLibAddr, dereercomp, 0, NULL);
-  if (remoteThread == NULL)
-  {
-    return false;
-  }
+    // Free the allocated memory
+    VirtualFreeEx(hProc, dereercomp, strlen(dllFullPath), MEM_RELEASE);
 
-  // Wait until thread have started (or stopped?)
-  WaitForSingleObject(remoteThread, INFINITE);
+    // Close the handles
+    CloseHandle(remoteThread);
+    CloseHandle(hProc);
 
-  // Free the allocated memory
-  VirtualFreeEx(handle, dereercomp, strlen(fullDllName), MEM_RELEASE);
-
-  // Close the handles
-  CloseHandle(remoteThread);
-  CloseHandle(handle);
-
-  return true;
+    return true;
 }
 
-int main(int argc, char* argv[])
+bool injectDLL(DWORD procId, const char* dllFullPath)
 {
-  printf("Finding pid for: %s\n", programName.c_str());
-  auto pid = findPid(programName);
-  if (pid == 0)
-  {
-    fprintf(stderr, "Could not find process: %s\n", programName.c_str());
-    return 1;
-  }
+    HANDLE hProcess = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ, FALSE, procId);
 
-  printf("Injecting DLL: %s\n", dllName.c_str());
-  if (!injectDLL(pid))
-  {
-    fprintf(stderr, "Could not inject DLL: %s\n", dllName.c_str());
-    return 1;
-  }
+    if (hProcess == INVALID_HANDLE_VALUE)
+        return false;
 
-  printf("Done!\n");
-  return 0;
+    bool bInjected = injectDLL(hProcess, dllFullPath);
+
+    CloseHandle(hProcess);
+
+    return bInjected;
+}
+
+bool unloadDLL(HANDLE hProc, const char* dllName)
+{
+    DWORD procId = GetProcessId(hProc);
+
+    printf("PID-%d: Unload %s\n", procId, dllName);
+
+    if (procId == 0)
+        return false;
+
+    HMODULE hMod = GetMHandle(procId, dllName);
+
+    // Get the address to the function FreeLibrary in kernel32.dll
+    auto FreeLibAddr = (LPVOID)GetProcAddress(GetModuleHandleA("kernel32.dll"), "FreeLibrary");
+    if (FreeLibAddr == NULL)
+    {
+        return false;
+    }
+
+    // Create a thread in the opened process
+    auto remoteThread = CreateRemoteThread(hProc, NULL, 0, (LPTHREAD_START_ROUTINE)FreeLibAddr, (LPVOID)hMod, 0, NULL);
+    if (remoteThread == NULL)
+    {
+        return false;
+    }
+
+    // Wait until thread have started (or stopped?)
+    WaitForSingleObject(remoteThread, INFINITE);
+
+    // Close the handles
+    CloseHandle(remoteThread);
+
+    return true;
+}
+
+bool unloadDLL(DWORD procId, const char* dllName)
+{
+    HANDLE hProcess = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ, FALSE, procId);
+
+    if (hProcess == INVALID_HANDLE_VALUE)
+        return false;
+
+    bool bUnloaded = unloadDLL(hProcess, dllName);
+
+    CloseHandle(hProcess);
+
+    return bUnloaded;
+}
+
+bool loadDLL(const char* procName, const char* dllPath)
+{
+    DWORD pids[1024];
+    size_t nPids = findPids(procName, sizeof(pids), pids);
+    char fullDllPath[260];
+
+    if (nPids == 0)
+    {
+        printf("Could not find process: %s\n", procName);
+        return false;
+    }
+
+    if (!GetFullPathNameA(dllPath, sizeof(fullDllPath), fullDllPath, 0))
+    {
+        printf("Could not find dll: %s\n", dllPath);
+        return false;
+    }
+
+    printf("%s Injecting %s\n", procName, fullDllPath);
+
+    for (size_t i = 0; i < nPids; i++)
+    {
+        if (!injectDLL(pids[i], fullDllPath))
+            printf("%s:%d Could not inject DLL: %s\n", procName, pids[i], fullDllPath);
+    }
+
+    return true;
+}
+
+bool unloadDLL(const char* procName, const char* dllName)
+{
+    DWORD pids[1024];
+    size_t nPids = findPids(procName, sizeof(pids), pids);
+
+    if (nPids == 0)
+    {
+        fprintf(stderr, "Could not find process: %s\n", procName);
+        return false;
+    }
+
+    for (size_t i = 0; i < nPids; i++)
+    {
+        if (!unloadDLL(pids[i], dllName))
+            fprintf(stderr, "%s:%d Could not unload DLL: %s\n", procName, pids[i], dllName);
+    }
+
+    return true;
 }

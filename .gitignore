@@ -1,2 +1,5 @@
 build_debug/
 build_release/
+.vs/*
+out/*
+CMakeSettings.json

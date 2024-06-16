@@ -50,6 +50,6 @@ void Console::write(const char* format, ...)
     vsnprintf(message, sizeof(message), format, args);
     va_end(args);
 
-    WriteConsoleA(consoleHandle, message, strlen(message), nullptr, nullptr);
+    WriteConsoleA(consoleHandle, message, (DWORD)strlen(message), nullptr, nullptr);
   }
 }

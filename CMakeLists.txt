@@ -1,31 +1,19 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.0...3.15)
 
 project(dll-injection-skeleton)
 
 include(GenerateExportHeader)
 
-add_definitions(-D_WIN32_WINNT=0x0502)
+if(WIN32)
+	add_definitions(-D_WIN32_WINNT=0x0502)
+endif()
 
 # Common compiler flags
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Werror -std=c++11")
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0")
-
-# dll-injector.exe
-set(dll-injector_src
-  "src/dll-injector/dll_injector.cc"
+add_compile_options(
+    $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall>
+    $<$<CXX_COMPILER_ID:MSVC>:/W4>
+    $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Werror>
+    $<$<CXX_COMPILER_ID:MSVC>:/WX>
 )
 
-set(dll-injector_lib
-  "psapi"
-)
-
-add_executable(dll-injector ${dll-injector_src})
-target_link_libraries(dll-injector ${dll-injector_lib})
-
-# injected.dll
-set(injected_src
-  "src/injected/injected.cc"
-  "src/injected/console.cc"
-)
-
-add_library(injected MODULE ${injected_src})
+add_subdirectory(src)

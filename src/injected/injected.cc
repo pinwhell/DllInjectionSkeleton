@@ -3,17 +3,21 @@
 
 #include "console.h"
 
-static Console console;
+HINSTANCE ghInstance;
 
 void injectedMain()
 {
+  static Console console;
+  
   console.init("Injected DLL");
-
   console.write("hey its me ur brother");
 }
 
-extern "C" __declspec(dllexport) BOOL APIENTRY DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
+BOOL APIENTRY DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 {
+  ghInstance = hinstDLL;
+  (void)lpvReserved;
+
   static std::thread injectedMainThread;
 
   switch (fdwReason)
