@@ -5,6 +5,19 @@
 #include <vector>
 #include <TlHelp32.h>
 
+// Function to get a pointer to the filename from a given path
+const char* GetFilename(const char* path) {
+    // Pointers to the last occurrences of '/' and '\'
+    const char* unix_sep = strrchr(path, '/');
+    const char* win_sep = strrchr(path, '\\');
+
+    // Determine which is the last separator
+    const char* last_sep = unix_sep > win_sep ? unix_sep : win_sep;
+
+    // If there's no separator, the path itself is the filename
+    return last_sep ? last_sep + 1 : path;
+}
+
 HMODULE GetMHandle(DWORD processID, const char* dllName) {
     HMODULE hMod = 0;
     HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, processID);
@@ -24,6 +37,11 @@ HMODULE GetMHandle(DWORD processID, const char* dllName) {
         CloseHandle(hSnapshot);
     }
     return hMod;
+}
+
+bool IsModuleLoaded(HANDLE hProc, const char* moduleName)
+{
+    return GetMHandle(GetProcessId(hProc), moduleName) != 0;
 }
 
 size_t findPids(const char* programName, size_t resPidsSz, DWORD* outPids)
@@ -71,6 +89,12 @@ size_t findPids(const char* programName, size_t resPidsSz, DWORD* outPids)
 
 bool injectDLL(HANDLE hProc, const char* dllFullPath)
 {
+    const char* dllName = GetFilename(dllFullPath);
+    DWORD pid = GetProcessId(hProc);
+
+    if (IsModuleLoaded(hProc, dllName))
+        return true;
+
     // Get the address to the function LoadLibraryA in kernel32.dll
     auto LoadLibAddr = (LPVOID)GetProcAddress(GetModuleHandleA("kernel32.dll"), "LoadLibraryA");
     if (LoadLibAddr == NULL)
@@ -101,12 +125,14 @@ bool injectDLL(HANDLE hProc, const char* dllFullPath)
     // Wait until thread have started (or stopped?)
     WaitForSingleObject(remoteThread, INFINITE);
 
+    if (IsModuleLoaded(hProc, dllName))
+        printf("PID-%d: Loaded %s\n", pid, dllName);
+
     // Free the allocated memory
     VirtualFreeEx(hProc, dereercomp, strlen(dllFullPath), MEM_RELEASE);
 
     // Close the handles
     CloseHandle(remoteThread);
-    CloseHandle(hProc);
 
     return true;
 }
@@ -129,7 +155,8 @@ bool unloadDLL(HANDLE hProc, const char* dllName)
 {
     DWORD procId = GetProcessId(hProc);
 
-    printf("PID-%d: Unload %s\n", procId, dllName);
+    if (!IsModuleLoaded(hProc, dllName))
+        return true;
 
     if (procId == 0)
         return false;
@@ -152,6 +179,9 @@ bool unloadDLL(HANDLE hProc, const char* dllName)
 
     // Wait until thread have started (or stopped?)
     WaitForSingleObject(remoteThread, INFINITE);
+
+    if (!IsModuleLoaded(hProc, dllName))
+        printf("PID-%d: Unloaded %s\n", procId, dllName);
 
     // Close the handles
     CloseHandle(remoteThread);
@@ -190,8 +220,6 @@ bool loadDLL(const char* procName, const char* dllPath)
         printf("Could not find dll: %s\n", dllPath);
         return false;
     }
-
-    printf("%s Injecting %s\n", procName, fullDllPath);
 
     for (size_t i = 0; i < nPids; i++)
     {

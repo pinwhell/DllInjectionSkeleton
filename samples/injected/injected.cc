@@ -11,6 +11,8 @@ void injectedMain()
   
   console.init("Injected DLL");
   console.write("hey its me ur brother");
+
+  MessageBoxA(NULL, "Hi", NULL, NULL);
 }
 
 BOOL APIENTRY DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)

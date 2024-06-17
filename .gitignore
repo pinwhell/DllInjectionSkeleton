@@ -4,3 +4,4 @@ build_release/
 out/*
 CMakeSettings.json
 build/*
+bin/*
