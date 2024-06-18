@@ -4,6 +4,7 @@
 #include <psapi.h>
 #include <vector>
 #include <TlHelp32.h>
+#include <filesystem>
 
 // Function to get a pointer to the filename from a given path
 const char* GetFilename(const char* path) {
@@ -87,9 +88,10 @@ size_t findPids(const char* programName, size_t resPidsSz, DWORD* outPids)
   return resIndex;
 }
 
-bool injectDLL(HANDLE hProc, const char* dllFullPath)
+bool injectDLL(HANDLE hProc, const char* _dllFullPath)
 {
-    const char* dllName = GetFilename(dllFullPath);
+    std::string dllFullPath = std::filesystem::absolute(_dllFullPath).string();
+    const char* dllName = GetFilename(dllFullPath.c_str());
     DWORD pid = GetProcessId(hProc);
 
     if (IsModuleLoaded(hProc, dllName))
@@ -103,14 +105,14 @@ bool injectDLL(HANDLE hProc, const char* dllFullPath)
     }
 
     // Allocate memory inside the opened process
-    auto dereercomp = VirtualAllocEx(hProc, NULL, strlen(dllFullPath), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    auto dereercomp = VirtualAllocEx(hProc, NULL, strlen(dllFullPath.c_str()), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (dereercomp == NULL)
     {
         return false;
     }
 
     // Write the DLL name to the allocated memory
-    if (!WriteProcessMemory(hProc, dereercomp, dllFullPath, strlen(dllFullPath), NULL))
+    if (!WriteProcessMemory(hProc, dereercomp, dllFullPath.c_str(), strlen(dllFullPath.c_str()), NULL))
     {
         return false;
     }
@@ -129,7 +131,7 @@ bool injectDLL(HANDLE hProc, const char* dllFullPath)
         printf("PID-%d: Loaded %s\n", pid, dllName);
 
     // Free the allocated memory
-    VirtualFreeEx(hProc, dereercomp, strlen(dllFullPath), MEM_RELEASE);
+    VirtualFreeEx(hProc, dereercomp, strlen(dllFullPath.c_str()), MEM_RELEASE);
 
     // Close the handles
     CloseHandle(remoteThread);
