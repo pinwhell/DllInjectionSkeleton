@@ -207,7 +207,6 @@ bool loadDLL(const char* procName, const char* dllPath)
 {
     DWORD pids[1024];
     size_t nPids = findPids(procName, sizeof(pids), pids);
-    char fullDllPath[260];
 
     if (nPids == 0)
     {
@@ -215,16 +214,10 @@ bool loadDLL(const char* procName, const char* dllPath)
         return false;
     }
 
-    if (!GetFullPathNameA(dllPath, sizeof(fullDllPath), fullDllPath, 0))
-    {
-        printf("Could not find dll: %s\n", dllPath);
-        return false;
-    }
-
     for (size_t i = 0; i < nPids; i++)
     {
-        if (!injectDLL(pids[i], fullDllPath))
-            printf("%s:%d Could not inject DLL: %s\n", procName, pids[i], fullDllPath);
+        if (!injectDLL(pids[i], dllPath))
+            printf("%s:%d Could not inject DLL: %s\n", procName, pids[i], dllPath);
     }
 
     return true;
