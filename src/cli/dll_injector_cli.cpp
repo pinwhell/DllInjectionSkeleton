@@ -1,8 +1,10 @@
 #include <stdio.h>
-#include <dll_injector_cli.h>
-#include <dll_injector.h>
+#include <gurka/dll_injector_cli.h>
+#include <gurka/dll_injector.h>
 #include <filesystem>
 #include <iostream>
+
+using namespace gurka;
 
 int cli_dll_load(const char* procName, const char* dllPath, bool bRawPath = false)
 {
@@ -21,7 +23,7 @@ void print_usage()
         "usage: dll-injector-cli eject  [process name.exe] [dll name]\n");
 }
 
-int dll_injector_main(int argc, const char** argv)
+int gurka::dll_injector_main(int argc, const char** argv)
 {
     try {
         if (argc < 2)

@@ -1,4 +1,6 @@
-#include <dll_injector_cli.h>
+#include <gurka/dll_injector_cli.h>
+
+using namespace gurka;
 
 int main(int argc, const char* argv[])
 {

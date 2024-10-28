@@ -5,6 +5,9 @@
 #include <vector>
 #include <TlHelp32.h>
 #include <filesystem>
+#include <gurka/dll_injector.h>
+
+using namespace gurka;
 
 // Function to get a pointer to the filename from a given path
 const char* GetFilename(const char* path) {
@@ -45,7 +48,7 @@ bool IsModuleLoaded(HANDLE hProc, const char* moduleName)
     return GetMHandle(GetProcessId(hProc), moduleName) != 0;
 }
 
-size_t findPids(const char* programName, size_t resPidsSz, DWORD* outPids)
+size_t gurka::findPids(const char* programName, size_t resPidsSz, DWORD* outPids)
 {
   // Enumerate all processes
   size_t resIndex = 0;
@@ -88,7 +91,7 @@ size_t findPids(const char* programName, size_t resPidsSz, DWORD* outPids)
   return resIndex;
 }
 
-bool injectDLL(HANDLE hProc, const char* _dllFullPath)
+bool gurka::injectDLL(HANDLE hProc, const char* _dllFullPath)
 {
     std::string dllFullPath = std::filesystem::absolute(_dllFullPath).string();
     const char* dllName = GetFilename(dllFullPath.c_str());
@@ -139,7 +142,7 @@ bool injectDLL(HANDLE hProc, const char* _dllFullPath)
     return true;
 }
 
-bool injectDLL(DWORD procId, const char* dllFullPath)
+bool gurka::injectDLL(DWORD procId, const char* dllFullPath)
 {
     HANDLE hProcess = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ, FALSE, procId);
 
@@ -153,7 +156,7 @@ bool injectDLL(DWORD procId, const char* dllFullPath)
     return bInjected;
 }
 
-bool unloadDLL(HANDLE hProc, const char* dllName)
+bool gurka::unloadDLL(HANDLE hProc, const char* dllName)
 {
     DWORD procId = GetProcessId(hProc);
 
@@ -191,7 +194,7 @@ bool unloadDLL(HANDLE hProc, const char* dllName)
     return true;
 }
 
-bool unloadDLL(DWORD procId, const char* dllName)
+bool gurka::unloadDLL(DWORD procId, const char* dllName)
 {
     HANDLE hProcess = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ, FALSE, procId);
 
@@ -205,7 +208,7 @@ bool unloadDLL(DWORD procId, const char* dllName)
     return bUnloaded;
 }
 
-bool loadDLL(const char* procName, const char* dllPath)
+bool gurka::loadDLL(const char* procName, const char* dllPath)
 {
     DWORD pids[1024];
     size_t nPids = findPids(procName, sizeof(pids), pids);
@@ -225,7 +228,7 @@ bool loadDLL(const char* procName, const char* dllPath)
     return true;
 }
 
-bool unloadDLL(const char* procName, const char* dllName)
+bool gurka::unloadDLL(const char* procName, const char* dllName)
 {
     DWORD pids[1024];
     size_t nPids = findPids(procName, sizeof(pids), pids);
