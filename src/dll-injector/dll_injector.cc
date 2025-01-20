@@ -6,8 +6,14 @@
 #include <TlHelp32.h>
 #include <filesystem>
 #include <gurka/dll_injector.h>
+#include <optional>
+#include <sstream>
 
 using namespace gurka;
+
+bool gurka::EnableDllLog = true;
+
+#define LOG(...) if(EnableDllLog) printf(__VA_ARGS__)
 
 // Function to get a pointer to the filename from a given path
 const char* GetFilename(const char* path) {
@@ -91,9 +97,31 @@ size_t gurka::findPids(const char* programName, size_t resPidsSz, DWORD* outPids
   return resIndex;
 }
 
+std::optional<std::filesystem::path> FindInPath(const std::string& filename) {
+    const char* path_env = std::getenv("PATH");
+    if (!path_env) return std::nullopt;
+
+    std::istringstream path_stream(path_env);
+    std::string dir;
+    while (std::getline(path_stream, dir, ';')) {
+        std::filesystem::path potential_path = std::filesystem::path(dir) / filename;
+        if (std::filesystem::exists(potential_path)) {
+            return potential_path;
+        }
+    }
+    return std::nullopt;
+}
+
 bool gurka::injectDLL(HANDLE hProc, const char* _dllFullPath)
 {
-    std::string dllFullPath = std::filesystem::absolute(_dllFullPath).string();
+    std::filesystem::path path = _dllFullPath;
+    if (!std::filesystem::exists(path))
+    {
+        if (auto newPath = FindInPath(_dllFullPath)) path = *newPath;
+        else path = std::filesystem::absolute(_dllFullPath);
+        if (!std::filesystem::exists(path)) return false;
+    }
+    std::string dllFullPath = path.string();
     const char* dllName = GetFilename(dllFullPath.c_str());
     DWORD pid = GetProcessId(hProc);
 
@@ -131,7 +159,7 @@ bool gurka::injectDLL(HANDLE hProc, const char* _dllFullPath)
     WaitForSingleObject(remoteThread, INFINITE);
 
     if (IsModuleLoaded(hProc, dllName))
-        printf("PID-%d: Loaded %s\n", pid, dllName);
+        LOG("PID-%d: Loaded %s\n", pid, dllName);
 
     // Free the allocated memory
     VirtualFreeEx(hProc, dereercomp, strlen(dllFullPath.c_str()), MEM_RELEASE);
@@ -186,7 +214,7 @@ bool gurka::unloadDLL(HANDLE hProc, const char* dllName)
     WaitForSingleObject(remoteThread, INFINITE);
 
     if (!IsModuleLoaded(hProc, dllName))
-        printf("PID-%d: Unloaded %s\n", procId, dllName);
+        LOG("PID-%d: Unloaded %s\n", procId, dllName);
 
     // Close the handles
     CloseHandle(remoteThread);
@@ -215,14 +243,14 @@ bool gurka::loadDLL(const char* procName, const char* dllPath)
 
     if (nPids == 0)
     {
-        printf("Could not find process: %s\n", procName);
+        LOG("Could not find process: %s\n", procName);
         return false;
     }
 
     for (size_t i = 0; i < nPids; i++)
     {
         if (!injectDLL(pids[i], dllPath))
-            printf("%s:%d Could not inject DLL: %s\n", procName, pids[i], dllPath);
+            LOG("%s:%d Could not inject DLL: %s\n", procName, pids[i], dllPath);
     }
 
     return true;

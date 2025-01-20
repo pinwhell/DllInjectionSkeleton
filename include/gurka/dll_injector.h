@@ -11,4 +11,5 @@ namespace gurka {
 	bool loadDLL(const char* procName, const char* dllPath);
 	bool unloadDLL(DWORD procId, const char* dllName);
 	bool unloadDLL(const char* procName, const char* dllPath);
+	extern bool EnableDllLog;
 }

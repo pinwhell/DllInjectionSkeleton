@@ -16,11 +16,17 @@ int cli_dll_unload(const char* procName, const char* dllName)
     return unloadDLL(procName, dllName) ? 0 : 1;
 }
 
+int cli_dll_reload(const char* procName, const char* dllName)
+{
+    return unloadDLL(procName, dllName), cli_dll_load(procName, dllName);
+}
+
 void print_usage()
 {
     printf(
-        "usage: dll-injector-cli inject [process name.exe] [optional raw] [dll path]\n"
-        "usage: dll-injector-cli eject  [process name.exe] [dll name]\n");
+        "usage: dll-injector-cli inject             [process name.exe] [optional raw] [dll path]\n"
+        "usage: dll-injector-cli eject              [process name.exe] [dll name]\n"
+        "usage: dll-injector-cli reload|reinject    [process name.exe] [dll name]\n");
 }
 
 int gurka::dll_injector_main(int argc, const char** argv)
@@ -55,6 +61,18 @@ int gurka::dll_injector_main(int argc, const char** argv)
 
             return cli_dll_unload(argv[2], argv[3]);
         }
+
+        if (!strcmp(option, "reload") || !strcmp(option, "reinject"))
+        {
+            if (argc < 4)
+            {
+                print_usage();
+                return 0;
+            }
+
+            return cli_dll_reload(argv[2], argv[3]);
+        }
+
 
         print_usage();
         return 0;

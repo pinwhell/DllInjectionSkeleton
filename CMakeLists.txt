@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.0...3.15)
 
 project(GurkaInjector)
 
-include (CBuildKit)
+find_package(CBuildKit REQUIRED)
 
 option(USE_STATIC_LINKING "Use static linking for the runtime" ON)
 
