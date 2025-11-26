@@ -15,6 +15,32 @@ bool gurka::EnableDllLog = true;
 
 #define LOG(...) if(EnableDllLog) printf(__VA_ARGS__)
 
+bool validateProcess(DWORD pid, std::string* nameOut = nullptr)
+{
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) return false;
+
+    PROCESSENTRY32 pe{};
+    pe.dwSize = sizeof(pe);
+
+    if (!Process32First(snap, &pe)) {
+        CloseHandle(snap);
+        return false;
+    }
+
+    bool found = false;
+    do {
+        if (pe.th32ProcessID == pid) {
+            found = true;
+            if (nameOut) *nameOut = pe.szExeFile;
+            break;
+        }
+    } while (Process32Next(snap, &pe));
+
+    CloseHandle(snap);
+    return found;
+}
+
 // Function to get a pointer to the filename from a given path
 const char* GetFilename(const char* path) {
     // Pointers to the last occurrences of '/' and '\'
@@ -273,5 +299,30 @@ bool gurka::unloadDLL(const char* procName, const char* dllName)
             fprintf(stderr, "%s:%d Could not unload DLL: %s\n", procName, pids[i], dllName);
     }
 
+    return true;
+}
+
+bool gurka::loadDllByPid(DWORD pid, const char* dllPath) {
+    std::string name;
+    if (!validateProcess(pid, &name)) {
+        LOG("Could not find process by PID: %d\n", pid);
+        return false;
+    }
+    if (!injectDLL(pid, dllPath)) {
+        LOG("%s:%d Could not inject DLL: %s\n", name.c_str(), pid, dllPath);
+        return false;
+    }
+    return true;
+}
+bool gurka::unloadDllByPid(DWORD pid, const char* dllName) {
+    std::string name;
+    if (!validateProcess(pid, &name)) {
+        LOG("Could not find process by PID: %d\n", pid);
+        return false;
+    }
+    if (!unloadDLL(pid, dllName)) {
+        LOG("%s:%d Could not unload DLL: %s\n", name.c_str(), pid, dllName);
+        return false;
+    }
     return true;
 }
